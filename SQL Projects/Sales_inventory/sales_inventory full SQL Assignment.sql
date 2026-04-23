@@ -1893,51 +1893,218 @@ $$;
 call insert_new_sale(16, 1, 2, 1, '2024-03-01', 799.99);
 
 -- 120. Create an index on the product_id column in the sales table to improve join performance
+
 create index if not exists idx_sales_product_id
     on sales (product_id);
+
+
 -- 121. Create an index on the registration_date column in the customers table to improve filtering by date
+create index if not exists idx_customers_registration_date
+    on customers (registration_date);
 
 -- 122. Write a transaction that inserts a new sale using sale_id, customer_id, product_id, quantity_sold, sale_date, and total_amount, then updates the corresponding product stock_quantity, ensuring both operations succeed or fail together
+begin;
+
+    insert into sales (
+        sale_id,
+        customer_id,
+        product_id,
+        quantity_sold,
+        sale_date,
+        total_amount
+    )
+    values (17, 3, 2, 1, current_date, 799.99);
+
+    update products
+    set stock_quantity = stock_quantity - 1
+    where product_id = 2;
+
+commit;
 
 -- 123. Write a transaction that updates a customer’s email and rolls back the change if the email is invalid
 
 -- 124. Create a view that shows total revenue per product
+create or replace view vw_product_revenue as
+    select
+        p.product_id,
+        p.product_name,
+        p.category,
+        p.price                  as unit_price,
+        sum(s.quantity_sold)     as total_units_sold,
+        sum(s.total_amount)      as total_revenue
+    from products p
+    inner join sales s on p.product_id = s.product_id
+    group by p.product_id, p.product_name, p.category, p.price;
+
 
 -- 125. Create a view that shows each customer and their total spending
+create or replace view vw_customer_spending as
+    select
+        c.customer_id,
+        c.first_name,
+        c.last_name,
+        c.email,
+        c.membership_status,
+        coalesce(sum(s.total_amount), 0) as total_spent
+    from customers c
+    left join sales s on c.customer_id = s.customer_id
+    group by c.customer_id, c.first_name, c.last_name,
+             c.email, c.membership_status;
+
 
 -- 126. Use UNION to combine a list of all customer first names and product names into a single column
-
+select
+    first_name   as name,
+    'Customer'   as source
+from customers
+union
+select
+    product_name as name,
+    'Product'    as source
+from products
+order by source, name;
 -- 127. Use INTERSECT to find values that appear in both a list of customer IDs and a list of customer IDs who made purchases
+select customer_id
+from customers
 
+intersect
+
+select distinct customer_id
+from sales
+
+order by customer_id;
 -- 128. Perform an anti-join to find products that have never been sold using LEFT JOIN
-
+select
+    p.product_id,
+    p.product_name,
+    p.category,
+    p.price,
+    p.stock_quantity
+from products p
+left join sales s on p.product_id = s.product_id
+where s.sale_id is null
+order by p.product_id;
 -- 129. Use NOT EXISTS to find customers who have not made any purchases
-
+select
+    c.customer_id,
+    c.first_name,
+    c.last_name,
+    c.email,
+    c.membership_status
+from customers c
+where not exists (
+    select 1
+    from sales s
+    where s.customer_id = c.customer_id
+)
+order by c.customer_id;
 -- 130. Cast the price column to an integer and display it alongside the original price
+select
+    product_id,
+    product_name,
+    price                  as original_price,
+    price::int             as price_as_integer
+from products
+order by price desc;
 
 -- 131. Convert registration_date to text format and display it in 'YYYY-MM' format
-
+select
+    customer_id,
+    first_name,
+    last_name,
+    registration_date,
+    to_char(registration_date, 'YYYY-MM') as registration_year_month
+from customers
+order by registration_date;
 -- 132. The following query returns an error due to improper GROUP BY usage. Identify and fix the issue
 -- SELECT product_id, product_name, SUM(total_amount) FROM sales GROUP BY product_id;
-
+select
+    p.product_id,
+    p.product_name,
+    sum(s.total_amount) as total_sales
+from sales s
+inner join products p on s.product_id = p.product_id
+group by p.product_id, p.product_name
+order by total_sales desc;
 -- 133. The following query incorrectly filters aggregated results using WHERE. Identify and correct it
 -- SELECT product_id, SUM(total_amount) FROM sales WHERE SUM(total_amount) > 1000 GROUP BY product_id;
+select
+    product_id,
+    sum(total_amount) as total_sales
+from sales
+group by product_id
+having sum(total_amount) > 1000
+order by total_sales desc;
 
 -- 134. The following query returns incorrect results because it uses the wrong join condition. Identify and fix it
 -- SELECT *
 -- FROM assignment.sales s
 -- JOIN assignment.products p
 --   ON s.customer_id = p.product_id;
+select
+    s.sale_id,
+    s.customer_id,
+    s.product_id,
+    s.quantity_sold,
+    s.sale_date,
+    s.total_amount,
+    p.product_name,
+    p.category,
+    p.price
+from sales s
+inner join products p on s.product_id = p.product_id
+order by s.sale_id;
 
 -- 135. Replace NULL email values with 'No Email Provided' using COALESCE if any
-
+select
+    customer_id,
+    first_name,
+    last_name,
+    coalesce(nullif(trim(email), ''), 'No Email Provided') as email
+from customers
+order by customer_id;
 -- 136. Trim any leading or trailing spaces from customer first names if any
+select
+    customer_id,
+    first_name                  as raw_first_name,
+    trim(first_name)            as cleaned_first_name
+from customers
+where first_name != trim(first_name)  -- only show rows that actually have spaces
+order by customer_id;
 
 -- 137. Convert all customer emails to lowercase if any
-
+select
+    customer_id,
+    email  as original_email,
+    lower(email) as lowercase_email
+from customers
+where email is not null
+  and email != lower(email)
+order by customer_id;
 -- 138. Replace empty strings in phone numbers with NULL if any
-
+select
+    customer_id,
+    first_name,
+    last_name,
+    phone_number,
+    nullif(trim(phone_number), '') as cleaned_phone_number
+from customers
+order by customer_id;
 -- 139. Extract the year from registration_date and handle any NULL dates gracefully if any
-
+select
+    customer_id,
+    first_name,
+    last_name,
+    registration_date,
+    case
+        when registration_date is null then null
+        else extract(year from registration_date)::int
+    end as registration_year,
+    coalesce(
+        extract(year from registration_date)::text,
+        'No Registration Date'
+    ) as registration_year_label
+from customers
+order by customer_id;
 
 
